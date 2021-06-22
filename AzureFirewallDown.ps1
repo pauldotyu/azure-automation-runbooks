@@ -1,3 +1,11 @@
+Param
+(
+  [Parameter(Mandatory=$true)]
+  [String] $rgname,
+  [Parameter(Mandatory=$true)]
+  [String] $fwname
+)
+
 # Ensures you do not inherit an AzContext in your runbook
 Disable-AzContextAutosave -Scope Process
 
@@ -19,6 +27,6 @@ while(!($connectionResult) -and ($logonAttempt -le 10))
 }
 
 # Deallocate
-$firewall=Get-AzFirewall -ResourceGroupName rg-netops -Name fw-hub
+$firewall=Get-AzFirewall -ResourceGroupName $rgname -Name $fwname
 $firewall.Deallocate()
 $firewall | Set-AzFirewall

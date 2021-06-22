@@ -1,3 +1,15 @@
+Param
+(
+  [Parameter(Mandatory=$true)]
+  [String] $rgname,
+  [Parameter(Mandatory=$true)]
+  [String] $vnname,
+  [Parameter(Mandatory=$true)]
+  [String] $fwname,
+  [Parameter(Mandatory=$true)]
+  [String] $ipname
+)
+
 # Ensures you do not inherit an AzContext in your runbook
 Disable-AzContextAutosave -Scope Process
 
@@ -19,8 +31,8 @@ while(!($connectionResult) -and ($logonAttempt -le 10))
 }
 
 # Re-allocate
-$firewall=Get-AzFirewall -ResourceGroupName rg-netops -Name fw-hub
-$vnet = Get-AzVirtualNetwork -ResourceGroupName rg-netops -Name vn-hub
-$pip = Get-AzPublicIpAddress -ResourceGroupName rg-netops -Name fw-hub-pip
+$firewall=Get-AzFirewall -ResourceGroupName $rgname -Name $fwname
+$vnet = Get-AzVirtualNetwork -ResourceGroupName $rgname -Name $vnname
+$pip = Get-AzPublicIpAddress -ResourceGroupName $rgname -Name $ipname
 $firewall.Allocate($vnet, $pip)
 $firewall | Set-AzFirewall
