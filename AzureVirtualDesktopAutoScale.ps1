@@ -62,10 +62,9 @@ try {
 	if ($InvalidParams) {
 		throw "Invalid values for the following $($InvalidParams.Count) params: $($InvalidParams -join ', ')"
 	}
-	
+
 	[string]$LogAnalyticsWorkspaceId = Get-PSObjectPropVal -Obj $RqtParams -Key 'LogAnalyticsWorkspaceId'
 	[string]$LogAnalyticsPrimaryKey = Get-PSObjectPropVal -Obj $RqtParams -Key 'LogAnalyticsPrimaryKey'
-	[string]$ConnectionAssetName = Get-PSObjectPropVal -Obj $RqtParams -Key 'ConnectionAssetName'
 	[string]$EnvironmentName = Get-PSObjectPropVal -Obj $RqtParams -Key 'EnvironmentName'
 	[string]$ResourceGroupName = $RqtParams.ResourceGroupName
 	[string]$HostPoolName = $RqtParams.HostPoolName
@@ -83,9 +82,6 @@ try {
 	[bool]$SkipAuth = !!(Get-PSObjectPropVal -Obj $RqtParams -Key 'SkipAuth')
 	[bool]$SkipUpdateLoadBalancerType = !!(Get-PSObjectPropVal -Obj $RqtParams -Key 'SkipUpdateLoadBalancerType')
 
-	if ([string]::IsNullOrWhiteSpace($ConnectionAssetName)) {
-		$ConnectionAssetName = 'AzureRunAsConnection'
-	}
 	if ([string]::IsNullOrWhiteSpace($EnvironmentName)) {
 		$EnvironmentName = 'AzureCloud'
 	}
@@ -133,7 +129,7 @@ try {
 		else {
 			Write-Output $WriteMessage
 		}
-			
+
 		if (!$LogAnalyticsWorkspaceId -or !$LogAnalyticsPrimaryKey) {
 			return
 		}
@@ -145,7 +141,7 @@ try {
 				'TimeStamp'    = $MessageTimeStamp
 			}
 			$json_body = ConvertTo-Json -Compress $body_obj
-			
+
 			$PostResult = Send-OMSAPIIngestionFile -customerId $LogAnalyticsWorkspaceId -sharedKey $LogAnalyticsPrimaryKey -Body $json_body -logType 'WVDTenantScale_CL' -TimeStampField 'TimeStamp' -EnvironmentName $EnvironmentName
 			if ($PostResult -ine 'Accepted') {
 				throw "Error posting to OMS: $PostResult"
@@ -160,18 +156,18 @@ try {
 		param (
 			[Parameter(Mandatory = $true)]
 			[int]$nRunningVMs,
-			
+
 			[Parameter(Mandatory = $true)]
 			[int]$nRunningCores,
-			
+
 			[Parameter(Mandatory = $true)]
 			[int]$nUserSessions,
 
 			[Parameter(Mandatory = $true)]
 			[int]$MaxUserSessionsPerVM,
-			
+
 			[switch]$InPeakHours,
-			
+
 			[Parameter(Mandatory = $true)]
 			[hashtable]$Res
 		)
@@ -189,7 +185,7 @@ try {
 			$res.nVMsToStart = $MinRunningVMs - $nRunningVMs
 			Write-Log "Number of running session host is less than minimum required. Need to start $($res.nVMsToStart) VMs"
 		}
-		
+
 		if ($InPeakHours) {
 			[double]$nUserSessionsPerCore = $nUserSessions / $nRunningCores
 			# In peak hours: check if current capacity is meeting the user demands
@@ -255,7 +251,7 @@ try {
 			if ($SessionHost.AllowNewSession -eq $AllowNewSession) {
 				return
 			}
-			
+
 			[string]$SessionHostName = $VM.SessionHostName
 			Write-Log "Update session host '$SessionHostName' to set allow new sessions to $AllowNewSession"
 			if ($PSCmdlet.ShouldProcess($SessionHostName, "Update session host to set allow new sessions to $AllowNewSession")) {
@@ -307,7 +303,7 @@ try {
 		Begin { }
 		Process {
 			TryUpdateSessionHostDrainMode -VM $VM -AllowNewSession:$true
-			
+
 			$SessionHost = $VM.SessionHost
 			[string]$SessionHostName = $VM.SessionHostName
 			if (!$SessionHost.Session) {
@@ -353,39 +349,19 @@ try {
 	#region azure auth, ctx
 
 	if (!$SkipAuth) {
-		# Collect the credentials from Azure Automation Account Assets
-		Write-Log "Get auto connection from asset: '$ConnectionAssetName'"
-		$ConnectionAsset = Get-AutomationConnection -Name $ConnectionAssetName
-		
 		# Azure auth
 		$AzContext = $null
 		try {
-			$AzAuth = Connect-AzAccount -ApplicationId $ConnectionAsset.ApplicationId -CertificateThumbprint $ConnectionAsset.CertificateThumbprint -TenantId $ConnectionAsset.TenantId -SubscriptionId $ConnectionAsset.SubscriptionId -EnvironmentName $EnvironmentName -ServicePrincipal
+			$AzAuth = Connect-AzAccount -Identity
 			if (!$AzAuth -or !$AzAuth.Context) {
 				throw $AzAuth
 			}
 			$AzContext = $AzAuth.Context
 		}
 		catch {
-			throw [System.Exception]::new('Failed to authenticate Azure with application ID, tenant ID, subscription ID', $PSItem.Exception)
+			throw [System.Exception]::new('Failed to authenticate Azure using System-Assigned Managed Identity', $PSItem.Exception)
 		}
-		Write-Log "Successfully authenticated with Azure using service principal: $($AzContext | Format-List -Force | Out-String)"
-
-		# Set Azure context with subscription, tenant
-		if ($AzContext.Tenant.Id -ine $ConnectionAsset.TenantId -or $AzContext.Subscription.Id -ine $ConnectionAsset.SubscriptionId) {
-			if ($PSCmdlet.ShouldProcess((@($ConnectionAsset.TenantId, $ConnectionAsset.SubscriptionId) -join ', '), 'Set Azure context with tenant ID, subscription ID')) {
-				try {
-					$AzContext = Set-AzContext -TenantId $ConnectionAsset.TenantId -SubscriptionId $ConnectionAsset.SubscriptionId
-					if (!$AzContext -or $AzContext.Tenant.Id -ine $ConnectionAsset.TenantId -or $AzContext.Subscription.Id -ine $ConnectionAsset.SubscriptionId) {
-						throw $AzContext
-					}
-				}
-				catch {
-					throw [System.Exception]::new('Failed to set Azure context with tenant ID, subscription ID', $PSItem.Exception)
-				}
-				Write-Log "Successfully set the Azure context with the tenant ID, subscription ID: $($AzContext | Format-List -Force | Out-String)"
-			}
-		}
+		Write-Log "Successfully authenticated with Azure using System-Assigned Managed Identity: $($AzContext | Format-List -Force | Out-String)"
 	}
 
 	#endregion
@@ -435,7 +411,7 @@ try {
 	Write-Log "Number of session hosts in the HostPool: $($SessionHosts.Count)"
 
 	#endregion
-	
+
 
 	#region determine if on/off peak hours
 
@@ -486,7 +462,7 @@ try {
 		[string]$SessionHostName = Get-SessionHostName -SessionHost $SessionHost
 		$VMs.Add($SessionHostName.Split('.')[0].ToLower(), @{ 'SessionHostName' = $SessionHostName; 'SessionHost' = $SessionHost; 'Instance' = $null })
 	}
-	
+
 	Write-Log 'Get all VMs, check session host status and get usage info'
 	foreach ($VMInstance in (Get-AzVM -Status)) {
 		if (!$VMs.ContainsKey($VMInstance.Name.ToLower())) {
@@ -700,7 +676,7 @@ try {
 		}
 		$SessionHost = $VM.SessionHost
 		[string]$SessionHostName = $VM.SessionHostName
-		
+
 		if ($SessionHost.Session -and !$LimitSecondsToForceLogOffUser) {
 			Write-Log -Warn "Session host '$SessionHostName' has $($SessionHost.Session) sessions but limit seconds to force log off user is set to 0, so will not stop any more session hosts (https://aka.ms/wvdscale#how-the-scaling-tool-works)"
 			# Note: why break ? Because the list this loop iterates through is sorted by number of sessions, if it hits this, the rest of items in the loop will also hit this
@@ -775,7 +751,7 @@ try {
 
 			Write-Log "Force log off $($VM.UserSessions.Count) users on session host: '$SessionHostName'"
 			$VM.UserSessions | TryForceLogOffUser
-			
+
 			Write-Log "Stop session host '$SessionHostName' as a background job"
 			if ($PSCmdlet.ShouldProcess($SessionHostName, 'Stop session host as a background job')) {
 				# $StopSessionHostFullNames.Add($VM.SessionHost.Name, $null)
@@ -800,9 +776,9 @@ try {
 		if (!($StopVMjobs | Where-Object { $_.State -ieq 'Running' })) {
 			break
 		}
-		
+
 		Write-Log "[Check jobs status] Total: $($StopVMjobs.Count), $(($StopVMjobs | Group-Object State | ForEach-Object { "$($_.Name): $($_.Count)" }) -join ', ')"
-		
+
 		$VMstoResetDrainModeAndSessions = @($VMsToStop.Values | Where-Object { $_.StopJob.State -ine 'Running' })
 		foreach ($VM in $VMstoResetDrainModeAndSessions) {
 			TryResetSessionHostDrainModeAndUserSessions -VM $VM
