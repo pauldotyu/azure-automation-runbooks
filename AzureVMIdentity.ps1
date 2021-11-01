@@ -1,17 +1,33 @@
-param (
-    [object]$WebHookData
+Param
+(
+  [Parameter(Mandatory=$true)]
+  [object]$WebHookData,
+  [Parameter(Mandatory=$true)]
+  [String] $rgname
 )
 
 if ($WebHookData) {
-    $groupName = "AibBuilder"
     Import-Module Az.Accounts
     Import-Module Az.Compute
     Import-Module Az.Resources
     
     # Ensures you do not inherit an AzContext in your runbook
     Disable-AzContextAutosave –Scope Process
-    $AzAuth = Connect-AzAccount -Identity
+    $AzContext = $null
     
+    try {
+        $AzAuth = Connect-AzAccount -Identity
+        if (!$AzAuth -or !$AzAuth.Context) {
+            throw $AzAuth
+        }
+        $AzContext = $AzAuth.Context
+    }
+    catch {
+        throw [System.Exception]::new('Failed to authenticate Azure using System-Assigned Managed Identity', $PSItem.Exception)
+    }
+    
+    Write-Log "Successfully authenticated with Azure using System-Assigned Managed Identity: $($AzContext | Format-List -Force | Out-String)"
+
     $requestBody = $WebHookData.requestBody | ConvertFrom-Json
     $vmResource = Get-AzResource -Id $requestBody.Subject
     
@@ -22,8 +38,8 @@ if ($WebHookData) {
     $vm = Get-AzVM -Name $vmResource.Name -ResourceGroupName $vmResource.ResourceGroupName
     $id = $vm.Identity.PrincipalId
     
-    #$groupId = (Get-AzADGroup -DisplayName $groupname).ID
-    #Add-AzADGroupMember -MemberObjectId $id -TargetGroupObjectId $groupId
+    $groupId = (Get-AzADGroup -DisplayName $rgname).ID
+    Add-AzADGroupMember -MemberObjectId $id -TargetGroupObjectId $groupId
 }
 else {
     Write-Output 'no data'
