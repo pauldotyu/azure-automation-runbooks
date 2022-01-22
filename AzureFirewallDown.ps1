@@ -9,22 +9,20 @@ Param
 # Ensures you do not inherit an AzContext in your runbook
 Disable-AzContextAutosave -Scope Process
 
-$connection = Get-AutomationConnection -Name AzureRunAsConnection
+$AzContext = $null
 
-# Wrap authentication in retry logic for transient network failures
-$logonAttempt = 0
-while(!($connectionResult) -and ($logonAttempt -le 10))
-{
-    $LogonAttempt++
-    # Logging in to Azure...
-    $connectionResult = Connect-AzAccount `
-                            -ServicePrincipal `
-                            -Tenant $connection.TenantID `
-                            -ApplicationId $connection.ApplicationID `
-                            -CertificateThumbprint $connection.CertificateThumbprint
-
-    Start-Sleep -Seconds 30
+try {
+    $AzAuth = Connect-AzAccount -Identity
+    if (!$AzAuth -or !$AzAuth.Context) {
+        throw $AzAuth
+    }
+    $AzContext = $AzAuth.Context
 }
+catch {
+    throw [System.Exception]::new('Failed to authenticate Azure using System-Assigned Managed Identity', $PSItem.Exception)
+}
+
+Write-Log "Successfully authenticated with Azure using System-Assigned Managed Identity: $($AzContext | Format-List -Force | Out-String)"
 
 # Deallocate
 $firewall=Get-AzFirewall -ResourceGroupName $rgname -Name $fwname
