@@ -22,7 +22,7 @@ catch {
     throw [System.Exception]::new('Failed to authenticate Azure using System-Assigned Managed Identity', $PSItem.Exception)
 }
 
-Write-Log "Successfully authenticated with Azure using System-Assigned Managed Identity: $($AzContext | Format-List -Force | Out-String)"
+Write-Output "Successfully authenticated with Azure using System-Assigned Managed Identity: $($AzContext | Format-List -Force | Out-String)"
 
 # Deallocate
 $firewall=Get-AzFirewall -ResourceGroupName $rgname -Name $fwname
